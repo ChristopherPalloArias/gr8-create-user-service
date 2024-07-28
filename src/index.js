@@ -75,7 +75,7 @@ async function startService() {
   let channel;
   async function connectRabbitMQ() {
     try {
-      const connection = await amqp.connect('amqp://localhost');
+      const connection = await amqp.connect('amqp://3.136.72.14:5672/');
       channel = await connection.createChannel();
       await channel.assertQueue('user-events', { durable: true });
       console.log('Connected to RabbitMQ');
