@@ -4,34 +4,38 @@ import bcrypt from 'bcrypt';
 import amqp from 'amqplib';
 import swaggerUi from 'swagger-ui-express';
 import swaggerJsDoc from 'swagger-jsdoc';
-import { SecretsManagerClient, GetSecretValueCommand } from "@aws-sdk/client-secrets-manager";
 import AWS from 'aws-sdk';
 
-const secret_name = "myServiceSecrets_gr8";
+// AWS region and Lambda function configuration
 const region = "us-east-2";
+const lambdaFunctionName = "fetchSecretsFunction_gr8";
 
-const client = new SecretsManagerClient({
-  region: region,
-});
+// Function to invoke Lambda and fetch secrets
+async function getSecretFromLambda() {
+  const lambda = new AWS.Lambda({ region: region });
+  const params = {
+    FunctionName: lambdaFunctionName,
+  };
 
-async function getSecret() {
   try {
-    const response = await client.send(
-      new GetSecretValueCommand({
-        SecretId: secret_name,
-        VersionStage: "AWSCURRENT", // VersionStage defaults to AWSCURRENT if unspecified
-      })
-    );
-    return JSON.parse(response.SecretString);
+    const response = await lambda.invoke(params).promise();
+    const payload = JSON.parse(response.Payload);
+    if (payload.errorMessage) {
+      throw new Error(payload.errorMessage);
+    }
+    const body = JSON.parse(payload.body);
+    return JSON.parse(body.secret);
   } catch (error) {
-    throw new Error(`Error fetching secret: ${error}`);
+    console.error('Error invoking Lambda function:', error);
+    throw error;
   }
 }
 
+// Function to start the service
 async function startService() {
   let secrets;
   try {
-    secrets = await getSecret();
+    secrets = await getSecretFromLambda();
   } catch (error) {
     console.error(`Error starting service: ${error}`);
     return;
@@ -58,10 +62,10 @@ async function startService() {
       info: {
         title: 'Create User Service API',
         version: '1.0.0',
-        description: 'API for creating users'
-      }
+        description: 'API for creating users',
+      },
     },
-    apis: ['./src/index.js']
+    apis: ['./src/index.js'],
   };
 
   const swaggerDocs = swaggerJsDoc(swaggerOptions);
@@ -125,7 +129,7 @@ async function startService() {
       // Publish user created event to RabbitMQ
       const event = {
         eventType: 'UserCreated',
-        data: { firstName, lastName, email, username, password: hashedPassword }
+        data: { firstName, lastName, email, username, password: hashedPassword },
       };
       channel.sendToQueue('user-events', Buffer.from(JSON.stringify(event)));
 
@@ -137,8 +141,8 @@ async function startService() {
           lastName,
           email,
           username,
-          password: hashedPassword
-        }
+          password: hashedPassword,
+        },
       };
 
       dynamoDB.put(params, (err, data) => {
