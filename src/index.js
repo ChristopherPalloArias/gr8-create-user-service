@@ -84,54 +84,15 @@ async function startService() {
     }
   }
 
-  connectRabbitMQ();
+  await connectRabbitMQ();
 
-  /**
-   * @swagger
-   * /users:
-   *   post:
-   *     description: Create a new user
-   *     parameters:
-   *       - name: firstName
-   *         description: First name of the user
-   *         in: body
-   *         required: true
-   *         type: string
-   *       - name: lastName
-   *         description: Last name of the user
-   *         in: body
-   *         required: true
-   *         type: string
-   *       - name: email
-   *         description: Email of the user
-   *         in: body
-   *         required: true
-   *         type: string
-   *       - name: username
-   *         description: Username of the user
-   *         in: body
-   *         required: true
-   *         type: string
-   *       - name: password
-   *         description: Password of the user
-   *         in: body
-   *         required: true
-   *         type: string
-   *     responses:
-   *       201:
-   *         description: User created
-   */
   app.post('/users', async (req, res) => {
     const { firstName, lastName, email, username, password } = req.body;
+    console.log('Received request to create user:', req.body);
+
     try {
       const hashedPassword = await bcrypt.hash(password, 10);
-
-      // Publish user created event to RabbitMQ
-      const event = {
-        eventType: 'UserCreated',
-        data: { firstName, lastName, email, username, password: hashedPassword },
-      };
-      channel.sendToQueue('user-events', Buffer.from(JSON.stringify(event)));
+      console.log('Password hashed successfully:', hashedPassword);
 
       // Save user to DynamoDB
       const params = {
@@ -150,6 +111,16 @@ async function startService() {
           console.error('Error saving user to DynamoDB:', err);
           res.status(500).send({ message: 'Error saving user to DynamoDB', error: err });
         } else {
+          console.log('User saved to DynamoDB:', data);
+          
+          // Publish user created event to RabbitMQ
+          const event = {
+            eventType: 'UserCreated',
+            data: { firstName, lastName, email, username, password: hashedPassword },
+          };
+          channel.sendToQueue('user-events', Buffer.from(JSON.stringify(event)));
+          console.log('Event published to RabbitMQ:', event);
+
           res.status(201).send({ firstName, lastName, email, username });
         }
       });
@@ -159,7 +130,6 @@ async function startService() {
     }
   });
 
-  // Root route to check if the server is running
   app.get('/', (req, res) => {
     res.send('Create User Service Running');
   });
